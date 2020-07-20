@@ -20,6 +20,7 @@
 (defun +emms/mpc-update-database ()
   (interactive)
   (call-process "mpc" nil nil nil "update")
+  (emms-player-mpd-update-all-reset-cache)
   (message "MPD Database Updated!"))
 
 ;;;###autoload
