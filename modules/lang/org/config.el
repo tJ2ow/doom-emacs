@@ -699,7 +699,8 @@ between the two."
          "e" #'org-clock-modify-effort-estimate
          "E" #'org-set-effort
          "g" #'org-clock-goto
-         "G" (λ! (org-clock-goto 'select))
+         "G" (cmd! (org-clock-goto 'select))
+         "l" #'+org/toggle-last-clock
          "i" #'org-clock-in
          "I" #'org-clock-in-last
          "o" #'org-clock-out
@@ -722,7 +723,7 @@ between the two."
           "g" #'helm-org-in-buffer-headings
           "G" #'helm-org-agenda-files-headings)
          "c" #'org-clock-goto
-         "C" (λ! (org-clock-goto 'select))
+         "C" (cmd! (org-clock-goto 'select))
          "i" #'org-id-goto
          "r" #'org-refile-goto-last-stored
          "v" #'+org/goto-visible
@@ -966,8 +967,8 @@ compelling reason, so..."
         :ni "C-S-k" #'org-shiftup
         :ni "C-S-j" #'org-shiftdown
         ;; more intuitive RET keybinds
-        :i [return] (λ! (org-return t))
-        :i "RET"    (λ! (org-return t))
+        :i [return] (cmd! (org-return t))
+        :i "RET"    (cmd! (org-return t))
         :n [return] #'+org/dwim-at-point
         :n "RET"    #'+org/dwim-at-point
         ;; more vim-esque org motion keys (not covered by evil-org-mode)
@@ -1029,7 +1030,9 @@ compelling reason, so..."
   (defvar org-attach-id-dir nil)
 
   (setq org-publish-timestamp-directory (concat doom-cache-dir "org-timestamps/")
-        org-preview-latex-image-directory (concat doom-cache-dir "org-latex/"))
+        org-preview-latex-image-directory (concat doom-cache-dir "org-latex/")
+        ;; Recognize a), A), a., A., etc -- must be set before org is loaded.
+        org-list-allow-alphabetical t)
 
   ;; Make most of the default modules opt-in, because I sincerely doubt most
   ;; users use all of them.
@@ -1094,6 +1097,10 @@ compelling reason, so..."
 
   :config
   (setq org-archive-subtree-save-file-p t) ; save target buffer after archiving
+
+  ;; Prevent modifications made in invisible sections of an org document, as
+  ;; unintended changes can easily go unseen otherwise.
+  (setq org-catch-invisible-edits 'smart)
 
   ;; Global ID state means we can have ID links anywhere. This is required for
   ;; `org-brain', however.

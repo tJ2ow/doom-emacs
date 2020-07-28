@@ -381,7 +381,7 @@
       (:prefix-map ("f" . "file")
        :desc "Open project editorconfig"   "c"   #'editorconfig-find-current-editorconfig
        :desc "Copy this file"              "C"   #'doom/copy-this-file
-       :desc "Find directory"              "d"   #'dired
+       :desc "Find directory"              "d"   #'+default/dired
        :desc "Delete this file"            "D"   #'doom/delete-this-file
        :desc "Find file in emacs.d"        "e"   #'+default/find-in-emacsd
        :desc "Browse emacs.d"              "E"   #'+default/browse-emacsd
@@ -477,8 +477,8 @@
         (cond ((featurep! :completion ivy)   #'ivy-bibtex)
               ((featurep! :completion helm)  #'helm-bibtex)))
 
-       :desc "Toggle org-clock"             "c" #'+org/toggle-clock
-       :desc "Cancel org-clock"             "C" #'org-clock-cancel
+       :desc "Toggle last org-clock"        "c" #'+org/toggle-last-clock
+       :desc "Cancel current org-clock"     "C" #'org-clock-cancel
        :desc "Open deft"                    "d" #'deft
        (:when (featurep! :lang org +noter)
         :desc "Org noter"                  "e" #'org-noter)

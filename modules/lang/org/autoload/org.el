@@ -23,68 +23,62 @@
       t)))
 
 (defun +org--insert-item (direction)
-  (let* ((context
-          (save-excursion
-            (when (bolp)
-              (back-to-indentation)
-              (forward-char))
-            (org-element-lineage
-             (org-element-context)
-             '(table table-row headline inlinetask item plain-list)
-             t)))
-         (type (org-element-type context)))
-    (cond ((memq type '(item plain-list))
-           (let ((marker (org-element-property :bullet context))
-                 (pad (save-excursion
-                        (org-beginning-of-item)
-                        (back-to-indentation)
-                        (- (point) (line-beginning-position)))))
-             (save-match-data
-               (pcase direction
-                 (`below
-                  (org-end-of-item)
-                  (backward-char)
-                  (end-of-line)
-                  (if (and marker (string-match "\\([0-9]+\\)\\([).] *\\)" marker))
-                      (let ((l (line-number-at-pos)))
-                        (org-insert-item)
-                        (when (= l (line-number-at-pos))
-                          (org-next-item)
-                          (org-end-of-line)))
-                    (insert "\n" (make-string pad 32) (or marker ""))))
-                 (`above
-                  (org-beginning-of-item)
-                  (if (and marker (string-match-p "[0-9]+[).]" marker))
-                      (org-insert-item)
-                    (insert (make-string pad 32) (or marker ""))
-                    (save-excursion (insert "\n")))))))
-           (when (org-element-property :checkbox context)
-             (insert "[ ] ")))
+  (let ((context (org-element-lineage
+                  (org-element-context)
+                  '(table table-row headline inlinetask item plain-list)
+                  t)))
+    (pcase (org-element-type context)
+      ;; Add a new list item (carrying over checkboxes if necessary)
+      ((or `item `plain-list)
+       ;; Position determines where org-insert-todo-heading and org-insert-item
+       ;; insert the new list item.
+       (if (eq direction 'above)
+           (org-beginning-of-item)
+         (org-end-of-item)
+         (backward-char))
+       (org-insert-item (org-element-property :checkbox context))
+       ;; Handle edge case where current item is empty and bottom of list is
+       ;; flush against a new heading.
+       (when (and (eq direction 'below)
+                  (eq (org-element-property :contents-begin context)
+                      (org-element-property :contents-end context)))
+         (org-end-of-item)
+         (org-end-of-line)))
 
-          ((memq type '(table table-row))
-           (pcase direction
-             ('below (save-excursion (org-table-insert-row t))
-                     (org-table-next-row))
-             ('above (save-excursion (org-shiftmetadown))
-                     (+org/table-previous-row))))
+      ;; Add a new table row
+      ((or `table `table-row)
+       (pcase direction
+         ('below (save-excursion (org-table-insert-row t))
+                 (org-table-next-row))
+         ('above (save-excursion (org-shiftmetadown))
+                 (+org/table-previous-row))))
 
-          ((let ((level (or (org-current-level) 1)))
-             (pcase direction
-               (`below
-                (let (org-insert-heading-respect-content)
-                  (goto-char (line-end-position))
-                  (org-end-of-subtree)
-                  (insert "\n" (make-string level ?*) " ")))
-               (`above
-                (org-back-to-heading)
-                (insert (make-string level ?*) " ")
-                (save-excursion (insert "\n"))))
-             (when-let* ((todo-keyword (org-element-property :todo-keyword context))
-                         (todo-type (org-element-property :todo-type context)))
-               (org-todo (cond ((eq todo-type 'done)
-                                (car (+org-get-todo-keywords-for todo-keyword)))
-                               (todo-keyword)
-                               ('todo)))))))
+      ;; Otherwise, add a new heading, carrying over any todo state, if
+      ;; necessary.
+      (_
+       (let ((level (or (org-current-level) 1)))
+         ;; I intentionally avoid `org-insert-heading' and the like because they
+         ;; impose unpredictable whitespace rules depending on the cursor
+         ;; position. It's simpler to express this command's responsibility at a
+         ;; lower level than work around all the quirks in org's API.
+         (pcase direction
+           (`below
+            (let (org-insert-heading-respect-content)
+              (goto-char (line-end-position))
+              (org-end-of-subtree)
+              (insert "\n" (make-string level ?*) " ")))
+           (`above
+            (org-back-to-heading)
+            (insert (make-string level ?*) " ")
+            (save-excursion (insert "\n"))))
+         (when-let* ((todo-keyword (org-element-property :todo-keyword context))
+                     (todo-type    (org-element-property :todo-type context)))
+           (org-todo
+            (cond ((eq todo-type 'done)
+                   ;; Doesn't make sense to create more "DONE" headings
+                   (car (+org-get-todo-keywords-for todo-keyword)))
+                  (todo-keyword)
+                  ('todo)))))))
 
     (when (org-invisible-p)
       (org-show-hidden-entry))
@@ -278,9 +272,9 @@ If on a:
           (org-element-property :end context)))))))
 
 
-;; I use this instead of `org-insert-item' or `org-insert-heading' which are too
-;; opinionated and perform this simple task incorrectly (e.g. whitespace in the
-;; wrong places).
+;; I use these instead of `org-insert-item' or `org-insert-heading' because they
+;; impose bizarre whitespace rules depending on cursor location and many
+;; settings. These commands have a much simpler responsibility.
 ;;;###autoload
 (defun +org/insert-item-below (count)
   "Inserts a new heading, table cell or item below the current one."
@@ -295,37 +289,24 @@ If on a:
 
 
 ;;;###autoload
-(defun +org/dedent ()
-  "TODO"
-  (interactive)
-  (cond ((org-at-item-p)
-         (org-list-indent-item-generic
-          -1 nil
-          (save-excursion
-            (when (org-region-active-p)
-              (goto-char (region-beginning)))
-            (org-list-struct))))
-        ((org-at-heading-p)
-         (ignore-errors (org-promote)))
-        ((call-interactively #'self-insert-command))))
+(defun +org/toggle-last-clock (arg)
+  "Toggles last clocked item.
 
-;;;###autoload
-(defun +org/toggle-clock (arg)
-  "Toggles clock on the last clocked item.
+Clock out if an active clock is running (or cancel it if prefix ARG is non-nil).
 
-Clock out if an active clock is running. Clock in otherwise.
-
-If in an org file, clock in on the item at point. Otherwise clock into the last
-task you clocked into.
-
-See `org-clock-out', `org-clock-in' and `org-clock-in-last' for details on how
-the prefix ARG changes this command's behavior."
+If no clock is active, then clock into the last item. See `org-clock-in-last' to
+see how ARG affects this command."
   (interactive "P")
-  (if (org-clocking-p)
-      (if arg
-          (org-clock-cancel)
-        (org-clock-out))
-    (org-clock-in-last arg)))
+  (cond ((org-clocking-p)
+         (if arg
+             (org-clock-cancel)
+           (org-clock-out)))
+        ((and (null org-clock-history)
+              (or (org-on-heading-p)
+                  (org-at-item-p))
+              (y-or-n-p "No active clock. Clock in on current item?"))
+         (org-clock-in))
+        ((org-clock-in-last arg))))
 
 
 ;;; Folds
@@ -423,15 +404,15 @@ Made for `org-tab-first-hook' in evil-mode."
 
 ;;;###autoload
 (defun +org-update-cookies-h ()
-  "Update counts in headlines (aka \"cookies\")."
+  "Update statistics cookies/todo statistics in headlines."
   (when (and buffer-file-name (file-exists-p buffer-file-name))
     (let (org-hierarchical-todo-statistics)
       (org-update-parent-todo-statistics))))
 
 ;;;###autoload
 (defun +org-yas-expand-maybe-h ()
-  "Tries to expand a yasnippet snippet, if one is available. Made for
-`org-tab-first-hook'."
+  "Expand a yasnippet snippet, if trigger exists at point or region is active.
+Made for `org-tab-first-hook'."
   (when (bound-and-true-p yas-minor-mode)
     (and (let ((major-mode (if (org-in-src-block-p t)
                                (org-src-get-lang-mode (org-eldoc-get-src-lang))
@@ -455,8 +436,14 @@ Made for `org-tab-first-hook' in evil-mode."
 
 ;;;###autoload
 (defun +org-cycle-only-current-subtree-h (&optional arg)
-  "Toggle the local fold at the point (as opposed to cycling through all levels
-with `org-cycle')."
+  "Toggle the local fold at the point, and no deeper.
+`org-cycle's standard behavior is to cycle between three levels: collapsed,
+subtree and whole document. This is slow, especially in larger org buffer. Most
+of the time I just want to peek into the current subtree -- at most, expand
+*only* the current subtree.
+
+All my (performant) foldings needs are met between this and `org-show-subtree'
+(on zO for evil users), and `org-cycle' on shift-TAB if I need it."
   (interactive "P")
   (unless (eq this-command 'org-shifttab)
     (save-excursion
@@ -482,7 +469,7 @@ with `org-cycle')."
 
 ;;;###autoload
 (defun +org-make-last-point-visible-h ()
-  "Unfold subtree around point if saveplace places it to a folded region."
+  "Unfold subtree around point if saveplace places us in a folded region."
   (and (not org-agenda-inhibit-startup)
        (outline-invisible-p)
        (ignore-errors
